@@ -1,0 +1,53 @@
+name: Deploy HomeBot to Server
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH to remote server
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: SSH into server, deploy and start bot with token
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
+            set -e
+
+            # Установим зависимости, если нужно
+            apt update && apt install -y python3-venv
+
+            # Создаём директорию под ботов
+            mkdir -p /root/bots
+
+            # Клонируем репозиторий, если его нет
+            if [ ! -d /root/bots/homebot/.git ]; then
+              git clone https://github.com/ZaurMekhdiev/HomeBot.git /root/bots/homebot
+            fi
+
+            cd /root/bots/homebot
+
+            git reset --hard
+            git pull origin main
+
+            pkill -f bot.py || true
+
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install -r requirements.txt
+
+            # Передаём токен в .env
+            echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
+
+            # Запускаем бота
+            nohup python3 bot.py > bot.log 2>&1 &
+          EOF
