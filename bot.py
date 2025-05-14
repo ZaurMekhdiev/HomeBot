@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from datetime import time, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,22 +8,25 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    JobQueue,
-    Application
+    Application,
 )
 from pytz import timezone
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env
-load_dotenv()
+# Параметры
+DATA_FILE = "data.json"
+TIMEZONE = timezone("Asia/Ho_Chi_Minh")
 
-# Включаем логирование
+# Загрузка переменных окружения
+load_dotenv()
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("BOT_TOKEN is not set in environment variables")
+
+# Логирование
 logging.basicConfig(level=logging.INFO)
 
-# Устанавливаем таймзону Вьетнама
-local_tz = timezone("Asia/Ho_Chi_Minh")
-
-# Хранилище задач
+# Задачи
 TASKS = {
     "garden_morning": {"name": "Полить цветы в саду (утро)", "hour": 9, "minute": 0},
     "garden_evening": {"name": "Полить цветы в саду (вечер)", "hour": 20, "minute": 0},
@@ -31,72 +35,66 @@ TASKS = {
     "dishwasher_load": {"name": "Загрузи посудомойку", "hour": 20, "minute": 0},
 }
 
-# Глобальный chat_id группы
-group_chat_id = None
+# Загрузка/сохранение данных
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {"chats": {}}
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-# Универсальная клавиатура
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
+# Клавиатура задач
 def get_keyboard(task_key: str) -> InlineKeyboardMarkup:
     if task_key in ["garden_morning", "garden_evening"]:
         buttons = [
-            [InlineKeyboardButton("\U0001F327 Быф дождяф\U0001F327", callback_data=f"done_rain|{task_key}")],
-            [InlineKeyboardButton("\u2705 Я полив :)", callback_data=f"done_user|{task_key}")],
-            [InlineKeyboardButton("\U0001F62D Отстань на 30 минут плз", callback_data=f"remind_30|{task_key}")],
-        ]
-    elif task_key == "spray_plants":
-        buttons = [
-            [InlineKeyboardButton("\u2705 Я сделяль :)", callback_data=f"done_user|{task_key}")],
-            [InlineKeyboardButton("\U0001F62D Отстань на 30 минут плз", callback_data=f"remind_30|{task_key}")],
-        ]
-    elif task_key in ["dishwasher_unload", "dishwasher_load"]:
-        buttons = [
-            [InlineKeyboardButton("\u2705 Я сделяль :)", callback_data=f"done_user|{task_key}")],
-            [InlineKeyboardButton("\U0001F62D Отстань на 30 минут плз", callback_data=f"remind_30|{task_key}")],
+            [InlineKeyboardButton("🌧 Быф дождяф", callback_data=f"done_rain|{task_key}")],
+            [InlineKeyboardButton("✅ Я полив :)", callback_data=f"done_user|{task_key}")],
+            [InlineKeyboardButton("😢 Отстань на 30 минут", callback_data=f"remind_30|{task_key}")],
         ]
     else:
-        buttons = [[InlineKeyboardButton("\u2705 Готово", callback_data=f"done_user|{task_key}")]]
+        buttons = [
+            [InlineKeyboardButton("✅ Я сделяль :)", callback_data=f"done_user|{task_key}")],
+            [InlineKeyboardButton("😢 Отстань на 30 минут", callback_data=f"remind_30|{task_key}")],
+        ]
     return InlineKeyboardMarkup(buttons)
 
 # Планирование задач
-async def schedule_group_jobs(application: Application):
-    if group_chat_id is None:
-        logging.warning("Групповой chat_id не установлен. Напоминания не будут запланированы.")
-        return
+async def schedule_jobs(application: Application, chat_id: int):
     for task_key, task in TASKS.items():
         application.job_queue.run_daily(
             send_reminder,
-            time=time(task["hour"], task["minute"], tzinfo=local_tz),
+            time=time(task["hour"], task["minute"], tzinfo=TIMEZONE),
             days=(0, 1, 2, 3, 4, 5, 6),
-            data={"chat_id": group_chat_id, "task_key": task_key}
+            data={"chat_id": chat_id, "task_key": task_key}
         )
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global group_chat_id
-    group_chat_id = update.effective_chat.id
-    await update.message.reply_text(
-        "Привет! Я бот-напоминалка 😊 Буду каждый день напоминать группе о важных делах."
-    )
-    await schedule_group_jobs(context.application)
+    data = load_data()
+    chat_id = update.effective_chat.id
+    if str(chat_id) not in data["chats"]:
+        data["chats"][str(chat_id)] = {"active": True}
+        save_data(data)
+    await update.message.reply_text("Привет! Я бот-напоминалка 😊 Буду каждый день напоминать о важных делах.")
+    await schedule_jobs(context.application, chat_id)
 
 # Команда /list
 async def task_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lines = []
-    keyboard = []
-    for key, task in TASKS.items():
-        lines.append(f"📌 {task['name']}")
-        keyboard.append([InlineKeyboardButton(task["name"], callback_data=f"view|{key}")])
-    await update.message.reply_text(
-        text="Список задач:\n" + "\n".join(lines),
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard = [
+        [InlineKeyboardButton(task["name"], callback_data=f"view|{key}")]
+        for key, task in TASKS.items()
+    ]
+    text = "\n".join([f"📌 {task['name']}" for task in TASKS.values()])
+    await update.message.reply_text(f"Список задач:\n{text}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # Отправка напоминания
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     job_data = context.job.data
     chat_id = job_data['chat_id']
     task_key = job_data['task_key']
-
     await context.bot.send_message(
         chat_id=chat_id,
         text=f"🔔 Напоминание: {TASKS[task_key]['name']}",
@@ -111,7 +109,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "view":
         await query.message.reply_text(
-            text=f"🔔 Напоминание: {TASKS[task_key]['name']}",
+            f"🔔 Напоминание: {TASKS[task_key]['name']}",
             reply_markup=get_keyboard(task_key)
         )
     elif action == "done_rain":
@@ -126,23 +124,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data={"chat_id": query.message.chat.id, "task_key": task_key}
         )
 
-# Пост-инициализация
-async def post_init(application: Application):
-    if group_chat_id:
-        await schedule_group_jobs(application)
-
-# Точка входа
-if __name__ == '__main__':
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise RuntimeError("BOT_TOKEN is not set in environment variables")
-
-    application = ApplicationBuilder().token(token).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("list", task_list))
-    application.add_handler(CallbackQueryHandler(button_handler))
-
-    application.post_init = post_init
-
-    application.run_polling()
+# Запуск бота
+if __name__ == "__main__":
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("list", task_list))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.run_polling()
