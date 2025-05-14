@@ -1,0 +1,27 @@
+# IntelliJ / PyCharm / .idea
+.idea/
+*.iml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# dotenv
+.env
+
+# VSCode (на всякий случай)
+.vscode/
+
+# Logs
+*.log
