@@ -15,6 +15,7 @@ from telegram.ext import (
 from pytz import timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import asyncio
 
 # Настройка часового пояса
 TIMEZONE = timezone("Asia/Ho_Chi_Minh")
@@ -26,7 +27,14 @@ if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set in environment variables")
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # Файл базы данных
 DB_FILE = "reminders.db"
@@ -194,11 +202,10 @@ def add_daily_tasks():
                     ''', (0, key, task["name"], remind_time.strftime("%H:%M"), today.strftime("%Y-%m-%d")))
         conn.commit()
 
-if __name__ == "__main__":
+async def main():
     init_db()
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Планировщик задач
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(add_daily_tasks, 'cron', hour=0, minute=1)
     scheduler.start()
@@ -212,4 +219,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(notify_button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    app.run_polling()
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
