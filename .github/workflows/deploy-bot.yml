@@ -11,43 +11,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Set up SSH to remote server
+      - name: Set up SSH to server
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: SSH into server, deploy and start bot with token
+      - name: SSH and deploy bot
         run: |
-          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
             set -e
 
-            # Установим зависимости, если нужно
-            apt update && apt install -y python3-venv
+            # Обновление системы и установка venv (если нужно)
+            apt update
+            apt install -y python3-venv || true
 
-            # Создаём директорию под ботов
+            # Создание рабочей директории
             mkdir -p /root/bots
 
-            # Клонируем репозиторий, если его нет
+            # Клонирование, если нет
             if [ ! -d /root/bots/homebot/.git ]; then
               git clone https://github.com/ZaurMekhdiev/HomeBot.git /root/bots/homebot
             fi
 
             cd /root/bots/homebot
 
-            git reset --hard
-            git pull origin main
+            # Жёстко синхронизируем с origin/main
+            git fetch --all
+            git reset --hard origin/main
 
+            # Убиваем старого бота
             pkill -f bot.py || true
 
+            # Создание окружения и установка зависимостей
             python3 -m venv venv
             source venv/bin/activate
+            pip install --upgrade pip
             pip install -r requirements.txt
 
-            # Передаём токен в .env
+            # Перезаписываем .env с токеном
             echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
 
-            # Запускаем бота
+            # Запуск бота в фоне и вывод последних строк лога
             nohup python3 bot.py > bot.log 2>&1 &
+            sleep 3
+            tail -n 20 bot.log || echo "⚠️ Нет логов"
           EOF
