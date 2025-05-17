@@ -17,29 +17,16 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 
-# Настройка часового пояса
+DB_FILE = "reminders.db"
 TIMEZONE = timezone("Asia/Ho_Chi_Minh")
 
-# Загрузка переменных окружения
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set in environment variables")
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO)
 
-# Файл базы данных
-DB_FILE = "reminders.db"
-
-# Список ежедневных задач
 TASKS = {
     "garden_morning": {"name": "Полить цветы в саду (утро)", "hour": 9, "minute": 0, "days": (0, 1, 2, 3, 4, 5, 6)},
     "garden_evening": {"name": "Полить цветы в саду (вечер)", "hour": 20, "minute": 0, "days": (0, 1, 2, 3, 4, 5, 6)},
@@ -83,9 +70,12 @@ async def list_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("DEBUG: пока ничего не показываю")
 
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer("Кнопка пока ничего не делает")
+
 async def add_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("Введите название задачи:")
+    await update.message.reply_text("Че над?))))))) (введи название задачи)")
     context.user_data['awaiting_task_name'] = True
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -98,7 +88,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
         keyboard = [[InlineKeyboardButton(day, callback_data=f"day|{i}")] for i, day in enumerate(days)]
         keyboard.append([InlineKeyboardButton("Ввести дату", callback_data="custom_date")])
-        await update.message.reply_text("Выберите день недели или введите дату:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text("Када над?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif context.user_data.get("awaiting_date"):
         try:
@@ -217,9 +207,13 @@ async def main():
     app.add_handler(CommandHandler("debug", debug))
 
     app.add_handler(CallbackQueryHandler(notify_button_handler))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     await app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.get_running_loop().create_task(main())
+    except RuntimeError:
+        asyncio.run(main())
