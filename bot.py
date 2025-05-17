@@ -14,11 +14,14 @@ import nest_asyncio
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 from config import TOKEN, TIMEZONE
-from database.db import init_db
+from database.db import init_db, add_daily_tasks
 from logic.scheduler import create_scheduler
 from handlers import commands, callbacks, messages
 
 async def main():
+    # Добавляем системные задачи из logic.tasks в базу при старте
+    add_daily_tasks()
+
     init_db()
     app = ApplicationBuilder().token(TOKEN).build()
 
