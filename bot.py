@@ -16,6 +16,7 @@ from pytz import timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
+import nest_asyncio
 
 DB_FILE = "reminders.db"
 TIMEZONE = timezone("Asia/Ho_Chi_Minh")
@@ -213,4 +214,5 @@ async def main():
     await app.run_polling(close_loop=False)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    nest_asyncio.apply()
+    asyncio.get_event_loop().run_until_complete(main())
