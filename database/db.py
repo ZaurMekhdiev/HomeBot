@@ -83,3 +83,14 @@ def add_daily_tasks():
                     ''', (0, key, task["name"], remind_time.strftime("%H:%M"), today.strftime("%Y-%m-%d")))
         conn.commit()
 
+def get_user_tasks(chat_id: int):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('''
+            SELECT task_name, remind_time, remind_date, is_completed
+            FROM reminders
+            WHERE chat_id = ? OR chat_id = 0
+            ORDER BY remind_date, remind_time
+        ''', (chat_id,))
+        return c.fetchall()
