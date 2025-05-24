@@ -54,10 +54,26 @@ def add_daily_tasks():
     today = datetime.now(TIMEZONE).date()
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
+
+        # 1. Удаление устаревших задач старше 7 дней
+        c.execute('''
+            DELETE FROM reminders
+            WHERE task_type = 'daily' AND DATE(remind_date) < DATE(?,'-7 day')
+        ''', (today.strftime("%Y-%m-%d"),))
+
+        # 2. Обнуление статуса выполненных задач на сегодня
+        c.execute('''
+            UPDATE reminders
+            SET is_completed = 0, completed_by = NULL, completed_at = NULL
+            WHERE task_type = 'daily' AND remind_date = ?
+        ''', (today.strftime("%Y-%m-%d"),))
+
+        # 3. Добавление задач, если они отсутствуют
         for key, task in TASKS.items():
             if today.weekday() in task["days"]:
                 c.execute('''
-                    SELECT 1 FROM reminders WHERE task_key = ? AND remind_date = ? AND task_type = 'daily'
+                    SELECT 1 FROM reminders
+                    WHERE task_key = ? AND remind_date = ? AND task_type = 'daily'
                 ''', (key, today.strftime("%Y-%m-%d")))
                 if not c.fetchone():
                     remind_time = time(task["hour"], task["minute"])
@@ -66,3 +82,4 @@ def add_daily_tasks():
                         VALUES (?, ?, ?, ?, ?, 'daily')
                     ''', (0, key, task["name"], remind_time.strftime("%H:%M"), today.strftime("%Y-%m-%d")))
         conn.commit()
+
